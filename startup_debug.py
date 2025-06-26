@@ -55,7 +55,8 @@ def check_dependencies():
         result = subprocess.run(['pandoc', '--version'], 
                               capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            logger.info(f"Pandoc available: {result.stdout.split('\n')[0]}")
+            first_line = result.stdout.split('\n')[0]
+            logger.info(f"Pandoc available: {first_line}")
         else:
             logger.error(f"Pandoc check failed: {result.stderr}")
     except subprocess.TimeoutExpired:

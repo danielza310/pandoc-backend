@@ -234,23 +234,7 @@ def convert_files():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    try:
-        # Check if pandoc is available
-        result = subprocess.run(['pandoc', '--version'], capture_output=True, text=True)
-        pandoc_available = result.returncode == 0
-        
-        return jsonify({
-            'status': 'healthy',
-            'pandoc_available': pandoc_available,
-            'pandoc_version': result.stdout.split('\n')[0] if pandoc_available else None
-        })
-    except FileNotFoundError:
-        return jsonify({
-            'status': 'unhealthy',
-            'pandoc_available': False,
-            'error': 'Pandoc not found'
-        }), 500
+    return "OK", 200
 
 @app.route('/')
 def index():
