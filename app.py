@@ -49,6 +49,8 @@ except Exception as e:
 
 logger.info("Application startup completed")
 
+print("PORT ENV:", os.environ.get("PORT"))
+
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
