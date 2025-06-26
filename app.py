@@ -180,6 +180,12 @@ def convert_files():
                     output_filename = f"{base_name}.rtf"
                 elif output_format == 'epub':
                     output_filename = f"{base_name}.epub"
+                elif output_format == 'pptx':
+                    output_filename = f"{base_name}.pptx"
+                elif output_format == 'xml':
+                    output_filename = f"{base_name}.xml"
+                elif output_format == 'txt':
+                    output_filename = f"{base_name}.txt"
                 else:
                     output_filename = f"{base_name}.{output_format}"
                 
@@ -240,9 +246,32 @@ def convert_files():
 def health_check():
     return "OK", 200
 
+@app.route('/retry', methods=['POST'])
+def retry_conversion():
+    """Retry a failed conversion with the same parameters"""
+    try:
+        if 'files' not in request.files:
+            return jsonify({'error': 'No files provided for retry'}), 400
+        
+        files = request.files.getlist('files')
+        output_format = request.form.get('output_format', 'gfm')
+        
+        if not files or all(file.filename == '' for file in files):
+            return jsonify({'error': 'No files selected for retry'}), 400
+        
+        # Log retry attempt
+        logger.info(f"Retry conversion requested for {len(files)} files to {output_format}")
+        
+        # Use the same conversion logic as /convert
+        return convert_files()
+        
+    except Exception as e:
+        logger.error(f"Retry conversion error: {str(e)}")
+        return jsonify({'error': f'Retry failed: {str(e)}'}), 500
+
 @app.route('/')
 def index():
-    return "Backend server is running. Use /convert or /health endpoints."
+    return "Backend server is running. Use /convert, /retry, or /health endpoints."
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
