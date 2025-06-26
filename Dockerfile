@@ -26,7 +26,7 @@ RUN mkdir -p uploads output
 RUN pandoc --version
 
 # Expose port (will be overridden by Railway's PORT env var)
-EXPOSE 8080
+EXPOSE 3000
 
 # Run the application using Railway's PORT environment variable
 CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "--timeout", "120", "--workers", "1", "--log-level", "info", "app:app"] 

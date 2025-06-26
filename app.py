@@ -49,6 +49,8 @@ except Exception as e:
 
 logger.info("Application startup completed")
 
+print("ALL ENV VARS:", dict(os.environ))
+
 print("PORT ENV:", os.environ.get("PORT"))
 
 def allowed_file(filename):
