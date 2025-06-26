@@ -162,32 +162,113 @@ def convert_files():
                 
                 # Generate output filename
                 base_name = os.path.splitext(filename)[0]
-                if output_format == 'gfm':
-                    output_filename = f"{base_name}.md"
-                elif output_format == 'markdown':
-                    output_filename = f"{base_name}.md"
-                elif output_format == 'html':
-                    output_filename = f"{base_name}.html"
-                elif output_format == 'latex':
-                    output_filename = f"{base_name}.tex"
-                elif output_format == 'pdf':
-                    output_filename = f"{base_name}.pdf"
-                elif output_format == 'docx':
-                    output_filename = f"{base_name}.docx"
-                elif output_format == 'odt':
-                    output_filename = f"{base_name}.odt"
-                elif output_format == 'rtf':
-                    output_filename = f"{base_name}.rtf"
-                elif output_format == 'epub':
-                    output_filename = f"{base_name}.epub"
-                elif output_format == 'pptx':
-                    output_filename = f"{base_name}.pptx"
-                elif output_format == 'xml':
-                    output_filename = f"{base_name}.xml"
-                elif output_format == 'txt':
-                    output_filename = f"{base_name}.txt"
-                else:
-                    output_filename = f"{base_name}.{output_format}"
+                
+                # Define common format extensions
+                format_extensions = {
+                    'gfm': 'md',
+                    'markdown': 'md',
+                    'html': 'html',
+                    'latex': 'tex',
+                    'pdf': 'pdf',
+                    'docx': 'docx',
+                    'odt': 'odt',
+                    'rtf': 'rtf',
+                    'epub': 'epub',
+                    'pptx': 'pptx',
+                    'xml': 'xml',
+                    'txt': 'txt',
+                    'docbook': 'xml',
+                    'jats': 'xml',
+                    'opendocument': 'odt',
+                    'revealjs': 'html',
+                    'beamer': 'pdf',
+                    's5': 'html',
+                    'slideous': 'html',
+                    'dzslides': 'html',
+                    'slidy': 'html',
+                    'asciidoc': 'adoc',
+                    'rst': 'rst',
+                    'org': 'org',
+                    'textile': 'textile',
+                    'mediawiki': 'wiki',
+                    'dokuwiki': 'txt',
+                    'haddock': 'hs',
+                    'man': 'man',
+                    'ms': 'ms',
+                    'opml': 'opml',
+                    'fb2': 'fb2',
+                    'mobi': 'mobi',
+                    'icml': 'icml',
+                    'tei': 'xml',
+                    'native': 'native',
+                    'json': 'json',
+                    'docbook5': 'xml',
+                    'docbook4': 'xml',
+                    'jats_archiving': 'xml',
+                    'jats_publishing': 'xml',
+                    'jats_articleauthoring': 'xml',
+                    'html5': 'html',
+                    'html4': 'html',
+                    'xhtml': 'xhtml',
+                    'xhtml5': 'xhtml',
+                    'xhtml4': 'xhtml',
+                    'markdown_github': 'md',
+                    'markdown_mmd': 'md',
+                    'markdown_phpextra': 'md',
+                    'markdown_strict': 'md',
+                    'markdown_texinfo': 'texi',
+                    'commonmark': 'md',
+                    'commonmark_x': 'md',
+                    'gfm': 'md',
+                    'markua': 'md',
+                    'spip': 'txt',
+                    'epub2': 'epub',
+                    'epub3': 'epub',
+                    'docbook4': 'xml',
+                    'docbook5': 'xml',
+                    'man': 'man',
+                    'ms': 'ms',
+                    'texinfo': 'texi',
+                    'textile': 'textile',
+                    'org': 'org',
+                    'asciidoc': 'adoc',
+                    'rst': 'rst',
+                    'mediawiki': 'wiki',
+                    'dokuwiki': 'txt',
+                    'haddock': 'hs',
+                    'opml': 'opml',
+                    'fb2': 'fb2',
+                    'mobi': 'mobi',
+                    'icml': 'icml',
+                    'tei': 'xml',
+                    'native': 'native',
+                    'json': 'json',
+                    'jats_archiving': 'xml',
+                    'jats_publishing': 'xml',
+                    'jats_articleauthoring': 'xml',
+                    'html5': 'html',
+                    'html4': 'html',
+                    'xhtml': 'xhtml',
+                    'xhtml5': 'xhtml',
+                    'xhtml4': 'xhtml',
+                    'markdown_github': 'md',
+                    'markdown_mmd': 'md',
+                    'markdown_phpextra': 'md',
+                    'markdown_strict': 'md',
+                    'markdown_texinfo': 'texi',
+                    'commonmark': 'md',
+                    'commonmark_x': 'md',
+                    'gfm': 'md',
+                    'markua': 'md',
+                    'spip': 'txt',
+                    'epub2': 'epub',
+                    'epub3': 'epub',
+                    'texinfo': 'texi'
+                }
+                
+                # Get extension for the output format
+                extension = format_extensions.get(output_format, output_format)
+                output_filename = f"{base_name}.{extension}"
                 
                 output_path = os.path.join(converted_dir, output_filename)
                 
