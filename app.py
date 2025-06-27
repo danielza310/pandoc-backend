@@ -819,6 +819,15 @@ def convert_files():
                     conversion_errors.append(f"{filename}: {processed_input_format}")
                     continue
                 
+                # Check if processed input file exists before Pandoc call
+                if not os.path.exists(processed_input_path):
+                    logger.error(f"File does not exist before Pandoc call: {processed_input_path}")
+                    conversion_errors.append(f"{filename}: Input file missing before Pandoc call")
+                    continue
+                else:
+                    logger.info(f"File confirmed to exist before Pandoc call: {processed_input_path}")
+                    logger.info(f"Current working directory: {os.getcwd()}")
+                
                 # Generate output filename
                 base_name = os.path.splitext(filename)[0]
                 
