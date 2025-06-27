@@ -459,7 +459,11 @@ def convert_pptx_to_markdown(pptx_path: str, output_path: str) -> Tuple[bool, Op
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(markdown_content))
         
-        return True, None
+        # Ensure the markdown file was created
+        if os.path.exists(output_path):
+            return True, None
+        else:
+            return False, "Markdown file was not created from PPTX"
         
     except Exception as e:
         return False, f"PPTX conversion error: {str(e)}"
@@ -471,19 +475,19 @@ def preprocess_special_formats(input_path, input_format, temp_dir):
             # Convert PDF to Markdown first
             temp_md_path = os.path.join(temp_dir, 'temp_converted.md')
             success, error = convert_pdf_to_markdown(input_path, temp_md_path)
-            if success:
+            if success and os.path.exists(temp_md_path):
                 return temp_md_path, 'markdown'
             else:
-                return None, error
+                return None, error or "PDF to Markdown conversion failed"
                 
         elif input_format == 'pptx':
             # Convert PPTX to Markdown first
             temp_md_path = os.path.join(temp_dir, 'temp_converted.md')
             success, error = convert_pptx_to_markdown(input_path, temp_md_path)
-            if success:
+            if success and os.path.exists(temp_md_path):
                 return temp_md_path, 'markdown'
             else:
-                return None, error
+                return None, error or "PPTX to Markdown conversion failed"
                 
         else:
             # No preprocessing needed for other formats
