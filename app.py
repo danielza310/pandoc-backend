@@ -800,6 +800,7 @@ def convert_files():
                 filename = secure_filename(file.filename)
                 input_path = os.path.join(uploads_dir, filename)
                 file.save(input_path)
+                logger.info(f"Saved uploaded file to: {input_path} (exists: {os.path.exists(input_path)})")
                 
                 # Determine input format
                 input_format = get_input_format(filename)
@@ -808,6 +809,7 @@ def convert_files():
                 processed_input_path, processed_input_format = preprocess_special_formats(
                     input_path, input_format, uploads_dir
                 )
+                logger.info(f"Processed input path: {processed_input_path} (exists: {os.path.exists(processed_input_path) if processed_input_path else 'N/A'})")
                 
                 if processed_input_path is None:
                     logger.error(f"Failed to preprocess {filename}: {processed_input_format}")
