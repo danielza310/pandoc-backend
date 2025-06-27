@@ -205,9 +205,14 @@ def convert_file_with_pandoc(input_path, output_path, input_format, output_forma
             input_path,
             '-f', input_format,
             '-t', output_format,
-            '-o', output_path,
-            '--extract-media', extract_media_dir
+            '-o', output_path
         ]
+        
+        # Add media extraction for formats that support it
+        # Only add --extract-media for formats that typically contain media
+        media_supporting_formats = ['html', 'html5', 'xhtml', 'epub', 'epub2', 'epub3', 'docx', 'pptx', 'odt']
+        if output_format in media_supporting_formats:
+            cmd.extend(['--extract-media', extract_media_dir])
         
         # Add format-specific options for precise conversion
         if output_format == 'gfm':
@@ -317,8 +322,23 @@ def convert_file_with_pandoc(input_path, output_path, input_format, output_forma
             # This allows maximum flexibility for custom formats
             cmd.extend([])
         
+        # Log the command being executed (without sensitive info)
+        logger.info(f"Executing pandoc command: {' '.join(cmd[:4])} ... [output format: {output_format}]")
+        
         # Execute pandoc command
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        
+        # Check if media was extracted
+        media_files = []
+        if os.path.exists(extract_media_dir):
+            for root, dirs, files in os.walk(extract_media_dir):
+                for file in files:
+                    media_files.append(os.path.join(root, file))
+        
+        if media_files:
+            logger.info(f"Extracted {len(media_files)} media files to {extract_media_dir}")
+        else:
+            logger.info("No media files were extracted")
         
         # Validate the output file
         validation_success, validation_message = validate_output_file(output_path, output_format)
@@ -328,11 +348,17 @@ def convert_file_with_pandoc(input_path, output_path, input_format, output_forma
         return True, None
         
     except subprocess.CalledProcessError as e:
-        return False, f"Pandoc error: {e.stderr}"
+        error_msg = f"Pandoc error: {e.stderr}"
+        logger.error(error_msg)
+        return False, error_msg
     except FileNotFoundError:
-        return False, "Pandoc is not installed or not found in PATH"
+        error_msg = "Pandoc is not installed or not found in PATH"
+        logger.error(error_msg)
+        return False, error_msg
     except Exception as e:
-        return False, f"Conversion error: {str(e)}"
+        error_msg = f"Conversion error: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
 
 def convert_pdf_to_markdown(pdf_path, output_path):
     """Convert PDF to Markdown using PyMuPDF"""
@@ -633,11 +659,15 @@ def convert_files():
         
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             # Add converted files
+            converted_count = 0
             for filename in os.listdir(converted_dir):
                 file_path = os.path.join(converted_dir, filename)
                 zipf.write(file_path, filename)
+                converted_count += 1
+                logger.info(f"Added converted file to ZIP: {filename}")
             
             # Add media files if they exist
+            media_count = 0
             if os.path.exists(media_dir) and os.listdir(media_dir):
                 for root, dirs, files in os.walk(media_dir):
                     for file in files:
@@ -645,6 +675,10 @@ def convert_files():
                         # Preserve directory structure in ZIP
                         arcname = os.path.relpath(file_path, session_dir)
                         zipf.write(file_path, arcname)
+                        media_count += 1
+                        logger.info(f"Added media file to ZIP: {arcname}")
+            
+            logger.info(f"ZIP created with {converted_count} converted files and {media_count} media files")
         
         # Clean up uploaded files (keep converted and zip for download)
         shutil.rmtree(uploads_dir, ignore_errors=True)
@@ -659,6 +693,34 @@ def convert_files():
         
     except Exception as e:
         return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/test', methods=['GET'])
+def test_conversion():
+    """Test endpoint to verify Pandoc is working and check supported formats"""
+    try:
+        # Test Pandoc availability
+        result = subprocess.run(['pandoc', '--version'], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            pandoc_version = result.stdout.split('\n')[0]
+        else:
+            return jsonify({'error': 'Pandoc not available'}), 500
+        
+        # Test supported formats
+        result = subprocess.run(['pandoc', '--list-input-formats'], capture_output=True, text=True, timeout=10)
+        input_formats = result.stdout.strip().split('\n') if result.returncode == 0 else []
+        
+        result = subprocess.run(['pandoc', '--list-output-formats'], capture_output=True, text=True, timeout=10)
+        output_formats = result.stdout.strip().split('\n') if result.returncode == 0 else []
+        
+        return jsonify({
+            'pandoc_version': pandoc_version,
+            'input_formats': input_formats,
+            'output_formats': output_formats,
+            'status': 'Pandoc is working correctly'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Test failed: {str(e)}'}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
