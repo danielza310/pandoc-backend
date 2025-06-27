@@ -8,6 +8,8 @@ from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import uuid
+import fitz  # PyMuPDF for PDF processing
+from pptx import Presentation  # python-pptx for PPTX processing
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +24,11 @@ OUTPUT_FOLDER = 'output'
 ALLOWED_EXTENSIONS = {
     'docx', 'doc', 'odt', 'rtf', 'html', 'htm', 'txt', 'md', 'markdown', 
     'tex', 'latex', 'epub', 'mobi', 'fb2', 'opml', 'org', 'mediawiki', 
-    'dokuwiki', 'textile', 'rst', 'asciidoc', 'man', 'ms'
+    'dokuwiki', 'textile', 'rst', 'asciidoc', 'man', 'ms', 'docbook', 'xml',
+    'jats', 'tei', 'ris', 'csljson', 'endnotexml', 'ipynb', 'csv', 'tsv',
+    'json', 'native', 'typst', 'djot', 'creole', 'tikiwiki', 'twiki', 'vimwiki',
+    'muse', 'pod', 't2t', 'haddock', 'mdoc', 'biblatex', 'bibtex', 'bits',
+    'pdf', 'pptx'  # Added PDF and PPTX support
 }
 
 # Create directories if they don't exist
@@ -84,7 +90,35 @@ def get_input_format(filename):
         'rst': 'rst',
         'asciidoc': 'asciidoc',
         'man': 'man',
-        'ms': 'ms'
+        'ms': 'ms',
+        'docbook': 'docbook',
+        'xml': 'docbook',  # Default XML format
+        'jats': 'jats',
+        'tei': 'tei',
+        'ris': 'ris',
+        'csljson': 'csljson',
+        'endnotexml': 'endnotexml',
+        'ipynb': 'ipynb',
+        'csv': 'csv',
+        'tsv': 'tsv',
+        'json': 'json',
+        'native': 'native',
+        'typst': 'typst',
+        'djot': 'djot',
+        'creole': 'creole',
+        'tikiwiki': 'tikiwiki',
+        'twiki': 'twiki',
+        'vimwiki': 'vimwiki',
+        'muse': 'muse',
+        'pod': 'pod',
+        't2t': 't2t',
+        'haddock': 'haddock',
+        'mdoc': 'mdoc',
+        'biblatex': 'biblatex',
+        'bibtex': 'bibtex',
+        'bits': 'bits',
+        'pdf': 'pdf',  # Added PDF support
+        'pptx': 'pptx'  # Added PPTX support
     }
     
     return format_mapping.get(ext, 'markdown')
@@ -300,6 +334,110 @@ def convert_file_with_pandoc(input_path, output_path, input_format, output_forma
     except Exception as e:
         return False, f"Conversion error: {str(e)}"
 
+def convert_pdf_to_markdown(pdf_path, output_path):
+    """Convert PDF to Markdown using PyMuPDF"""
+    try:
+        doc = fitz.open(pdf_path)
+        markdown_content = []
+        
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            text = page.get_text()
+            
+            # Clean up the text
+            lines = text.split('\n')
+            cleaned_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                if line:
+                    # Try to detect headers (simple heuristic)
+                    if len(line) < 100 and line.isupper():
+                        cleaned_lines.append(f"# {line.title()}")
+                    else:
+                        cleaned_lines.append(line)
+            
+            if cleaned_lines:
+                markdown_content.extend(cleaned_lines)
+                markdown_content.append('')  # Add blank line between pages
+        
+        doc.close()
+        
+        # Write to markdown file
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(markdown_content))
+        
+        return True, None
+        
+    except Exception as e:
+        return False, f"PDF conversion error: {str(e)}"
+
+def convert_pptx_to_markdown(pptx_path, output_path):
+    """Convert PPTX to Markdown using python-pptx"""
+    try:
+        prs = Presentation(pptx_path)
+        markdown_content = []
+        
+        for slide_num, slide in enumerate(prs.slides, 1):
+            # Add slide header
+            markdown_content.append(f"# Slide {slide_num}")
+            markdown_content.append('')
+            
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    text = shape.text.strip()
+                    
+                    # Try to detect if it's a title or content
+                    if len(text) < 100 and text.isupper():
+                        markdown_content.append(f"## {text.title()}")
+                    else:
+                        # Split into paragraphs
+                        paragraphs = text.split('\n')
+                        for para in paragraphs:
+                            if para.strip():
+                                markdown_content.append(para.strip())
+                                markdown_content.append('')
+            
+            markdown_content.append('---')  # Slide separator
+            markdown_content.append('')
+        
+        # Write to markdown file
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(markdown_content))
+        
+        return True, None
+        
+    except Exception as e:
+        return False, f"PPTX conversion error: {str(e)}"
+
+def preprocess_special_formats(input_path, input_format, temp_dir):
+    """Preprocess special formats (PDF, PPTX) to convert them to Pandoc-supported formats"""
+    try:
+        if input_format == 'pdf':
+            # Convert PDF to Markdown first
+            temp_md_path = os.path.join(temp_dir, 'temp_converted.md')
+            success, error = convert_pdf_to_markdown(input_path, temp_md_path)
+            if success:
+                return temp_md_path, 'markdown'
+            else:
+                return None, error
+                
+        elif input_format == 'pptx':
+            # Convert PPTX to Markdown first
+            temp_md_path = os.path.join(temp_dir, 'temp_converted.md')
+            success, error = convert_pptx_to_markdown(input_path, temp_md_path)
+            if success:
+                return temp_md_path, 'markdown'
+            else:
+                return None, error
+                
+        else:
+            # No preprocessing needed for other formats
+            return input_path, input_format
+            
+    except Exception as e:
+        return None, f"Preprocessing error: {str(e)}"
+
 @app.route('/convert', methods=['POST'])
 def convert_files():
     try:
@@ -345,6 +483,16 @@ def convert_files():
                 
                 # Determine input format
                 input_format = get_input_format(filename)
+                
+                # Preprocess special formats (PDF, PPTX) if needed
+                processed_input_path, processed_input_format = preprocess_special_formats(
+                    input_path, input_format, uploads_dir
+                )
+                
+                if processed_input_path is None:
+                    logger.error(f"Failed to preprocess {filename}: {processed_input_format}")
+                    conversion_errors.append(f"{filename}: {processed_input_format}")
+                    continue
                 
                 # Generate output filename
                 base_name = os.path.splitext(filename)[0]
@@ -461,7 +609,7 @@ def convert_files():
                 # Convert file
                 logger.info(f"Converting {filename} from {input_format} to {output_format}")
                 success, error = convert_file_with_pandoc(
-                    input_path, output_path, input_format, output_format, media_dir
+                    processed_input_path, output_path, processed_input_format, output_format, media_dir
                 )
                 
                 if success:
