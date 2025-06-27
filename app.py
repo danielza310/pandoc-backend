@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB limit
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -89,7 +90,7 @@ def get_input_format(filename):
         'rtf': 'rtf',
         'html': 'html',
         'htm': 'html',
-        'txt': 'plain',
+        'txt': 'markdown',  # Use markdown for txt input
         'md': 'markdown',
         'markdown': 'markdown',
         'tex': 'latex',
@@ -805,6 +806,7 @@ def convert_files():
                 
                 # Determine input format
                 input_format = get_input_format(filename)
+                logger.info(f"Detected input format for {filename}: {input_format}")
                 
                 # Preprocess special formats (PDF, PPTX) if needed
                 processed_input_path, processed_input_format = preprocess_special_formats(
