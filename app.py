@@ -8,8 +8,23 @@ from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import uuid
-import fitz  # PyMuPDF for PDF processing
-from pptx import Presentation  # python-pptx for PPTX processing
+import re
+from typing import Optional, Tuple, List, Dict, Any
+
+# Try to import optional dependencies
+try:
+    import fitz  # PyMuPDF for PDF processing
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+    fitz = None
+
+try:
+    from pptx import Presentation  # python-pptx for PPTX processing
+    PPTX_AVAILABLE = True
+except ImportError:
+    PPTX_AVAILABLE = False
+    Presentation = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -197,7 +212,7 @@ def validate_output_file(output_path, output_format):
         return False, f"Error validating output file: {str(e)}"
 
 def convert_file_with_pandoc(input_path, output_path, input_format, output_format, extract_media_dir):
-    """Convert file using Pandoc with precise format-specific options"""
+    """Convert file using Pandoc with precise format-specific options and enhanced media handling"""
     try:
         # Build base pandoc command
         cmd = [
@@ -208,10 +223,17 @@ def convert_file_with_pandoc(input_path, output_path, input_format, output_forma
             '-o', output_path
         ]
         
-        # Add media extraction for formats that support it
-        # Only add --extract-media for formats that typically contain media
-        media_supporting_formats = ['html', 'html5', 'xhtml', 'epub', 'epub2', 'epub3', 'docx', 'pptx', 'odt']
-        if output_format in media_supporting_formats:
+        # Add media extraction for ALL formats that might contain images
+        # This ensures we capture images from any source format
+        media_supporting_formats = [
+            'html', 'html5', 'xhtml', 'epub', 'epub2', 'epub3', 'docx', 'pptx', 'odt',
+            'markdown', 'gfm', 'commonmark', 'commonmark_x', 'rst', 'asciidoc',
+            'textile', 'mediawiki', 'dokuwiki', 'org', 'opml', 'fb2', 'mobi',
+            'docbook', 'docbook4', 'docbook5', 'jats', 'tei', 'icml'
+        ]
+        
+        # Always extract media for formats that support it, or if input might contain images
+        if output_format in media_supporting_formats or input_format in ['docx', 'pptx', 'odt', 'epub', 'html']:
             cmd.extend(['--extract-media', extract_media_dir])
         
         # Add format-specific options for precise conversion
@@ -360,8 +382,11 @@ def convert_file_with_pandoc(input_path, output_path, input_format, output_forma
         logger.error(error_msg)
         return False, error_msg
 
-def convert_pdf_to_markdown(pdf_path, output_path):
+def convert_pdf_to_markdown(pdf_path: str, output_path: str) -> Tuple[bool, Optional[str]]:
     """Convert PDF to Markdown using PyMuPDF"""
+    if not PYMUPDF_AVAILABLE:
+        return False, "PyMuPDF is not available for PDF processing"
+    
     try:
         doc = fitz.open(pdf_path)
         markdown_content = []
@@ -398,8 +423,11 @@ def convert_pdf_to_markdown(pdf_path, output_path):
     except Exception as e:
         return False, f"PDF conversion error: {str(e)}"
 
-def convert_pptx_to_markdown(pptx_path, output_path):
+def convert_pptx_to_markdown(pptx_path: str, output_path: str) -> Tuple[bool, Optional[str]]:
     """Convert PPTX to Markdown using python-pptx"""
+    if not PPTX_AVAILABLE:
+        return False, "python-pptx is not available for PPTX processing"
+    
     try:
         prs = Presentation(pptx_path)
         markdown_content = []
@@ -464,6 +492,267 @@ def preprocess_special_formats(input_path, input_format, temp_dir):
     except Exception as e:
         return None, f"Preprocessing error: {str(e)}"
 
+def map_output_format(user_format):
+    """Map user-friendly format names to actual Pandoc format names"""
+    format_mapping = {
+        'txt': 'plain',  # Pandoc uses 'plain' for plain text, not 'txt'
+        'text': 'plain',
+        'plaintext': 'plain',
+        'word': 'docx',
+        'powerpoint': 'pptx',
+        'presentation': 'pptx',
+        'document': 'docx',
+        'webpage': 'html',
+        'web': 'html',
+        'page': 'html',
+        'notebook': 'ipynb',
+        'jupyter': 'ipynb',
+        'ebook': 'epub',
+        'book': 'epub',
+        'slide': 'revealjs',
+        'slides': 'revealjs',
+        'deck': 'revealjs',
+        'beamer_slide': 'beamer',
+        'latex_slide': 'beamer',
+        'pdf_slide': 'beamer',
+        'markdown_github': 'gfm',
+        'github_markdown': 'gfm',
+        'github': 'gfm',
+        'commonmark_x': 'commonmark_x',
+        'commonmark_x_extended': 'commonmark_x',
+        'extended_commonmark': 'commonmark_x',
+        'markua': 'markua',
+        'markua_document': 'markua',
+        'spip': 'spip',
+        'spip_wiki': 'spip',
+        'epub2': 'epub2',
+        'epub_version2': 'epub2',
+        'epub3': 'epub3',
+        'epub_version3': 'epub3',
+        'docbook4': 'docbook4',
+        'docbook_version4': 'docbook4',
+        'docbook5': 'docbook5',
+        'docbook_version5': 'docbook5',
+        'jats_archiving': 'jats_archiving',
+        'jats_archiving_version': 'jats_archiving',
+        'jats_publishing': 'jats_publishing',
+        'jats_publishing_version': 'jats_publishing',
+        'jats_articleauthoring': 'jats_articleauthoring',
+        'jats_article_authoring': 'jats_articleauthoring',
+        'html5': 'html5',
+        'html_version5': 'html5',
+        'html4': 'html4',
+        'html_version4': 'html4',
+        'xhtml': 'xhtml',
+        'xhtml5': 'xhtml5',
+        'xhtml_version5': 'xhtml5',
+        'xhtml4': 'xhtml4',
+        'xhtml_version4': 'xhtml4',
+        'markdown_github': 'markdown_github',
+        'markdown_mmd': 'markdown_mmd',
+        'markdown_phpextra': 'markdown_phpextra',
+        'markdown_strict': 'markdown_strict',
+        'markdown_texinfo': 'markdown_texinfo',
+        'commonmark': 'commonmark',
+        'commonmark_strict': 'commonmark',
+        'commonmark_x': 'commonmark_x',
+        'commonmark_extended': 'commonmark_x',
+        'gfm': 'gfm',
+        'github_flavored': 'gfm',
+        'markua': 'markua',
+        'markua_document': 'markua',
+        'spip': 'spip',
+        'spip_wiki': 'spip',
+        'epub2': 'epub2',
+        'epub_version2': 'epub2',
+        'epub3': 'epub3',
+        'epub_version3': 'epub3',
+        'texinfo': 'texinfo',
+        'tex_info': 'texinfo',
+        'textile': 'textile',
+        'textile_wiki': 'textile',
+        'org': 'org',
+        'org_mode': 'org',
+        'emacs_org': 'org',
+        'asciidoc': 'asciidoc',
+        'ascii_doc': 'asciidoc',
+        'rst': 'rst',
+        'restructuredtext': 'rst',
+        'rest': 'rst',
+        'mediawiki': 'mediawiki',
+        'wiki': 'mediawiki',
+        'wikipedia': 'mediawiki',
+        'dokuwiki': 'dokuwiki',
+        'doku_wiki': 'dokuwiki',
+        'haddock': 'haddock',
+        'haskell_doc': 'haddock',
+        'opml': 'opml',
+        'outline': 'opml',
+        'fb2': 'fb2',
+        'fictionbook': 'fb2',
+        'mobi': 'mobi',
+        'kindle': 'mobi',
+        'icml': 'icml',
+        'indesign': 'icml',
+        'tei': 'tei',
+        'text_encoding_initiative': 'tei',
+        'native': 'native',
+        'pandoc_native': 'native',
+        'json': 'json',
+        'javascript_object_notation': 'json',
+        'jats_archiving': 'jats_archiving',
+        'jats_archiving_version': 'jats_archiving',
+        'jats_publishing': 'jats_publishing',
+        'jats_publishing_version': 'jats_publishing',
+        'jats_articleauthoring': 'jats_articleauthoring',
+        'jats_article_authoring': 'jats_articleauthoring',
+        'html5': 'html5',
+        'html_version5': 'html5',
+        'html4': 'html4',
+        'html_version4': 'html4',
+        'xhtml': 'xhtml',
+        'xhtml5': 'xhtml5',
+        'xhtml_version5': 'xhtml5',
+        'xhtml4': 'xhtml4',
+        'xhtml_version4': 'xhtml4',
+        'markdown_github': 'markdown_github',
+        'markdown_mmd': 'markdown_mmd',
+        'markdown_phpextra': 'markdown_phpextra',
+        'markdown_strict': 'markdown_strict',
+        'markdown_texinfo': 'markdown_texinfo',
+        'commonmark': 'commonmark',
+        'commonmark_x': 'commonmark_x',
+        'gfm': 'gfm',
+        'markua': 'markua',
+        'spip': 'txt',
+        'epub2': 'epub',
+        'epub3': 'epub',
+        'docbook4': 'xml',
+        'docbook5': 'xml',
+        'man': 'man',
+        'ms': 'ms',
+        'texinfo': 'texi',
+        'textile': 'textile',
+        'org': 'org',
+        'asciidoc': 'adoc',
+        'rst': 'rst',
+        'mediawiki': 'wiki',
+        'dokuwiki': 'txt',
+        'haddock': 'hs',
+        'opml': 'opml',
+        'fb2': 'fb2',
+        'mobi': 'mobi',
+        'icml': 'icml',
+        'tei': 'xml',
+        'native': 'native',
+        'json': 'json',
+        'jats_archiving': 'xml',
+        'jats_publishing': 'xml',
+        'jats_articleauthoring': 'xml',
+        'html5': 'html',
+        'html4': 'html',
+        'xhtml': 'xhtml',
+        'xhtml5': 'xhtml',
+        'xhtml4': 'xhtml',
+        'markdown_github': 'md',
+        'markdown_mmd': 'md',
+        'markdown_phpextra': 'md',
+        'markdown_strict': 'md',
+        'markdown_texinfo': 'texi',
+        'commonmark': 'md',
+        'commonmark_x': 'md',
+        'gfm': 'md',
+        'markua': 'md',
+        'spip': 'txt',
+        'epub2': 'epub',
+        'epub3': 'epub',
+        'texinfo': 'texi'
+    }
+    
+    # Return the mapped format or the original if no mapping exists
+    return format_mapping.get(user_format.lower(), user_format.lower())
+
+def fix_image_paths_in_file(file_path: str, media_dir: str, output_format: str) -> bool:
+    """Fix image paths in converted files to use relative paths to img/ folder"""
+    try:
+        # Read the file content
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Define patterns for different output formats
+        if output_format in ['html', 'html5', 'xhtml']:
+            # Fix HTML img src attributes
+            content = re.sub(
+                r'src="([^"]*)"',
+                lambda m: f'src="img/{os.path.basename(m.group(1))}"' if m.group(1) else m.group(0),
+                content
+            )
+        elif output_format in ['markdown', 'gfm', 'commonmark', 'commonmark_x']:
+            # Fix Markdown image syntax
+            content = re.sub(
+                r'!\[([^\]]*)\]\(([^)]+)\)',
+                lambda m: f'![{m.group(1)}](img/{os.path.basename(m.group(2))})',
+                content
+            )
+        elif output_format in ['rst']:
+            # Fix reStructuredText image syntax
+            content = re.sub(
+                r'\.\. image:: ([^\n]+)',
+                lambda m: f'.. image:: img/{os.path.basename(m.group(1))}',
+                content
+            )
+        elif output_format in ['asciidoc']:
+            # Fix AsciiDoc image syntax
+            content = re.sub(
+                r'image::([^[]+)\[([^\]]*)\]',
+                lambda m: f'image::img/{os.path.basename(m.group(1))}[{m.group(2)}]',
+                content
+            )
+        
+        # Write the fixed content back
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error fixing image paths in {file_path}: {str(e)}")
+        return False
+
+def organize_media_files(media_dir: str, img_dir: str) -> List[str]:
+    """Organize extracted media files into img/ folder and return list of moved files"""
+    moved_files = []
+    
+    try:
+        # Create img directory if it doesn't exist
+        os.makedirs(img_dir, exist_ok=True)
+        
+        # Move all media files to img/ folder
+        if os.path.exists(media_dir):
+            for root, dirs, files in os.walk(media_dir):
+                for file in files:
+                    src_path = os.path.join(root, file)
+                    dst_path = os.path.join(img_dir, file)
+                    
+                    # Handle duplicate filenames
+                    counter = 1
+                    base_name, ext = os.path.splitext(file)
+                    while os.path.exists(dst_path):
+                        new_name = f"{base_name}_{counter}{ext}"
+                        dst_path = os.path.join(img_dir, new_name)
+                        counter += 1
+                    
+                    # Move the file
+                    shutil.move(src_path, dst_path)
+                    moved_files.append(dst_path)
+                    logger.info(f"Moved media file: {file} -> img/{os.path.basename(dst_path)}")
+        
+        return moved_files
+        
+    except Exception as e:
+        logger.error(f"Error organizing media files: {str(e)}")
+        return moved_files
+
 @app.route('/convert', methods=['POST'])
 def convert_files():
     try:
@@ -471,7 +760,8 @@ def convert_files():
             return jsonify({'error': 'No files provided'}), 400
         
         files = request.files.getlist('files')
-        output_format = request.form.get('output_format', 'pdf')
+        original_output_format = request.form.get('output_format', 'pdf')
+        output_format = original_output_format.strip().lower()
         
         if not files or all(file.filename == '' for file in files):
             return jsonify({'error': 'No files selected'}), 400
@@ -480,8 +770,10 @@ def convert_files():
         if not output_format or output_format.strip() == '':
             return jsonify({'error': 'Output format is required'}), 400
         
-        # Clean the output format
-        output_format = output_format.strip().lower()
+        # Map user-friendly format names to actual Pandoc format names
+        output_format = map_output_format(output_format)
+        
+        logger.info(f"User requested format: {original_output_format}, mapped to: {output_format}")
         
         # Create unique session directory
         session_id = str(uuid.uuid4())
@@ -492,10 +784,12 @@ def convert_files():
         uploads_dir = os.path.join(session_dir, 'uploads')
         converted_dir = os.path.join(session_dir, 'converted')
         media_dir = os.path.join(session_dir, 'media')
+        img_dir = os.path.join(session_dir, 'img')  # New img directory for organized images
         
         os.makedirs(uploads_dir, exist_ok=True)
         os.makedirs(converted_dir, exist_ok=True)
         os.makedirs(media_dir, exist_ok=True)
+        os.makedirs(img_dir, exist_ok=True)
         
         conversion_errors = []
         converted_files = []
@@ -537,6 +831,7 @@ def convert_files():
                     'pptx': 'pptx',
                     'xml': 'xml',
                     'txt': 'txt',
+                    'plain': 'txt',
                     'docbook': 'xml',
                     'jats': 'xml',
                     'opendocument': 'odt',
@@ -627,7 +922,10 @@ def convert_files():
                 }
                 
                 # Get extension for the output format
-                extension = format_extensions.get(output_format, output_format)
+                if output_format is None:
+                    extension = 'txt'  # Default fallback
+                else:
+                    extension = format_extensions.get(output_format, output_format)
                 output_filename = f"{base_name}.{extension}"
                 
                 output_path = os.path.join(converted_dir, output_filename)
@@ -639,6 +937,19 @@ def convert_files():
                 )
                 
                 if success:
+                    # Organize media files into img/ folder
+                    moved_media_files = organize_media_files(media_dir, img_dir)
+                    
+                    # Fix image paths in the converted file if it's a text-based format
+                    text_based_formats = ['html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 
+                                         'commonmark_x', 'rst', 'asciidoc', 'textile', 'mediawiki', 
+                                         'dokuwiki', 'org', 'opml', 'fb2', 'mobi', 'docbook', 
+                                         'docbook4', 'docbook5', 'jats', 'tei', 'icml']
+                    
+                    if output_format in text_based_formats and moved_media_files:
+                        fix_image_paths_in_file(output_path, img_dir, output_format)
+                        logger.info(f"Fixed image paths in {output_filename}")
+                    
                     logger.info(f"Successfully converted {filename} to {output_filename} and validated output")
                     converted_files.append(output_filename)
                 else:
@@ -666,19 +977,19 @@ def convert_files():
                 converted_count += 1
                 logger.info(f"Added converted file to ZIP: {filename}")
             
-            # Add media files if they exist
-            media_count = 0
-            if os.path.exists(media_dir) and os.listdir(media_dir):
-                for root, dirs, files in os.walk(media_dir):
+            # Add img folder with organized media files
+            img_count = 0
+            if os.path.exists(img_dir) and os.listdir(img_dir):
+                for root, dirs, files in os.walk(img_dir):
                     for file in files:
                         file_path = os.path.join(root, file)
-                        # Preserve directory structure in ZIP
+                        # Preserve img/ directory structure in ZIP
                         arcname = os.path.relpath(file_path, session_dir)
                         zipf.write(file_path, arcname)
-                        media_count += 1
-                        logger.info(f"Added media file to ZIP: {arcname}")
+                        img_count += 1
+                        logger.info(f"Added image file to ZIP: {arcname}")
             
-            logger.info(f"ZIP created with {converted_count} converted files and {media_count} media files")
+            logger.info(f"ZIP created with {converted_count} converted files and {img_count} image files")
         
         # Clean up uploaded files (keep converted and zip for download)
         shutil.rmtree(uploads_dir, ignore_errors=True)
@@ -734,7 +1045,8 @@ def retry_conversion():
             return jsonify({'error': 'No files provided for retry'}), 400
         
         files = request.files.getlist('files')
-        output_format = request.form.get('output_format', 'pdf')
+        original_output_format = request.form.get('output_format', 'pdf')
+        output_format = original_output_format.strip().lower()
         
         if not files or all(file.filename == '' for file in files):
             return jsonify({'error': 'No files selected for retry'}), 400
@@ -743,8 +1055,10 @@ def retry_conversion():
         if not output_format or output_format.strip() == '':
             return jsonify({'error': 'Output format is required for retry'}), 400
         
-        # Clean the output format
-        output_format = output_format.strip().lower()
+        # Map user-friendly format names to actual Pandoc format names
+        output_format = map_output_format(output_format)
+        
+        logger.info(f"User requested format: {original_output_format}, mapped to: {output_format}")
         
         # Log retry attempt
         logger.info(f"Retry conversion requested for {len(files)} files to {output_format}")
@@ -759,6 +1073,282 @@ def retry_conversion():
 @app.route('/')
 def index():
     return "Backend server is running. Use /convert, /retry, or /health endpoints."
+
+def get_supported_output_formats(input_formats):
+    """Get list of supported output formats for given input formats"""
+    
+    # Define format compatibility matrix
+    # This maps input formats to their supported output formats
+    format_compatibility = {
+        # Document formats
+        'docx': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'opendocument'
+        ],
+        'doc': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'opendocument'
+        ],
+        'odt': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx'
+        ],
+        'rtf': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        
+        # Presentation formats
+        'pptx': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'revealjs',
+            'beamer', 's5', 'slideous', 'dzslides', 'slidy'
+        ],
+        
+        # Web formats
+        'html': [
+            'markdown', 'gfm', 'commonmark', 'commonmark_x', 'pdf', 'latex',
+            'docbook', 'docbook4', 'docbook5', 'jats', 'tei', 'epub', 'epub2',
+            'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain', 'json', 'native',
+            'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki', 'haddock',
+            'man', 'ms', 'asciidoc', 'rst', 'html5', 'xhtml', 'docx', 'odt'
+        ],
+        'htm': [
+            'markdown', 'gfm', 'commonmark', 'commonmark_x', 'pdf', 'latex',
+            'docbook', 'docbook4', 'docbook5', 'jats', 'tei', 'epub', 'epub2',
+            'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain', 'json', 'native',
+            'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki', 'haddock',
+            'man', 'ms', 'asciidoc', 'rst', 'html5', 'xhtml', 'docx', 'odt'
+        ],
+        
+        # Markup formats
+        'markdown': [
+            'html', 'html5', 'xhtml', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt',
+            'revealjs', 'beamer', 's5', 'slideous', 'dzslides', 'slidy'
+        ],
+        'md': [
+            'html', 'html5', 'xhtml', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt',
+            'revealjs', 'beamer', 's5', 'slideous', 'dzslides', 'slidy'
+        ],
+        
+        # PDF (limited support)
+        'pdf': [
+            'markdown', 'gfm', 'commonmark', 'commonmark_x', 'txt', 'plain',
+            'html', 'html5', 'xhtml', 'json', 'native'
+        ],
+        
+        # E-book formats
+        'epub': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'mobi', 'fb2', 'rtf', 'txt', 'plain', 'json', 'native', 'icml',
+            'opml', 'org', 'textile', 'mediawiki', 'dokuwiki', 'haddock', 'man',
+            'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        'mobi': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'fb2', 'rtf', 'txt', 'plain', 'json',
+            'native', 'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        'fb2': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'rtf', 'txt', 'plain', 'json',
+            'native', 'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        
+        # Technical documentation formats
+        'asciidoc': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'rst', 'docx', 'odt'
+        ],
+        'rst': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'docx', 'odt'
+        ],
+        'org': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'textile', 'mediawiki', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        
+        # Wiki formats
+        'mediawiki': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        'dokuwiki': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        
+        # Plain text
+        'txt': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'plain', 'json',
+            'native', 'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        'plain': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'json',
+            'native', 'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        
+        # LaTeX
+        'latex': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei', 'epub',
+            'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain', 'json',
+            'native', 'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ],
+        'tex': [
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei', 'epub',
+            'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain', 'json',
+            'native', 'icml', 'opml', 'org', 'textile', 'mediawiki', 'dokuwiki',
+            'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt'
+        ]
+    }
+    
+    # Get all supported output formats for the input formats
+    all_supported_formats = set()
+    
+    for input_format in input_formats:
+        if input_format in format_compatibility:
+            all_supported_formats.update(format_compatibility[input_format])
+    
+    # If no specific compatibility found, return common formats
+    if not all_supported_formats:
+        all_supported_formats = {
+            'html', 'html5', 'xhtml', 'markdown', 'gfm', 'commonmark', 'commonmark_x',
+            'pdf', 'latex', 'docbook', 'docbook4', 'docbook5', 'jats', 'tei',
+            'epub', 'epub2', 'epub3', 'mobi', 'fb2', 'rtf', 'txt', 'plain',
+            'json', 'native', 'icml', 'opml', 'org', 'textile', 'mediawiki',
+            'dokuwiki', 'haddock', 'man', 'ms', 'asciidoc', 'rst', 'docx', 'odt',
+            'revealjs', 'beamer', 's5', 'slideous', 'dzslides', 'slidy'
+        }
+    
+    # Sort formats for better presentation
+    return sorted(list(all_supported_formats))
+
+@app.route('/supported-formats', methods=['POST'])
+def get_supported_formats():
+    """Get supported output formats for the given input files"""
+    try:
+        if 'files' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
+        
+        files = request.files.getlist('files')
+        
+        if not files or all(file.filename == '' for file in files):
+            return jsonify({'error': 'No files selected'}), 400
+        
+        # Get input formats from uploaded files
+        input_formats = set()
+        for file in files:
+            if file and file.filename:
+                input_format = get_input_format(file.filename)
+                input_formats.add(input_format)
+        
+        # Get supported output formats for these input formats
+        supported_formats = get_supported_output_formats(input_formats)
+        
+        return jsonify({
+            'input_formats': list(input_formats),
+            'supported_output_formats': supported_formats,
+            'message': f'Found {len(supported_formats)} supported output formats for {len(input_formats)} input format(s)'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting supported formats: {str(e)}")
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/all-formats', methods=['GET'])
+def get_all_formats():
+    """Get all supported input and output formats"""
+    try:
+        # Get all supported input formats
+        input_formats = list(ALLOWED_EXTENSIONS)
+        
+        # Get all possible output formats
+        all_output_formats = set()
+        for input_format in ALLOWED_EXTENSIONS:
+            input_format_name = get_input_format(f"test.{input_format}")
+            supported = get_supported_output_formats([input_format_name])
+            all_output_formats.update(supported)
+        
+        # Organize output formats by category
+        format_categories = {
+            'Web Formats': ['html', 'html5', 'xhtml'],
+            'Document Formats': ['pdf', 'docx', 'odt', 'rtf'],
+            'Markup Formats': ['markdown', 'gfm', 'commonmark', 'commonmark_x', 'markua'],
+            'E-book Formats': ['epub', 'epub2', 'epub3', 'mobi', 'fb2'],
+            'Technical Documentation': ['asciidoc', 'rst', 'org', 'textile', 'mediawiki', 'dokuwiki'],
+            'Presentation Formats': ['revealjs', 'beamer', 's5', 'slideous', 'dzslides', 'slidy'],
+            'Structured Formats': ['docbook', 'docbook4', 'docbook5', 'jats', 'tei', 'icml'],
+            'Plain Text': ['txt', 'plain'],
+            'Other Formats': ['json', 'native', 'opml', 'haddock', 'man', 'ms', 'latex']
+        }
+        
+        organized_formats = {}
+        for category, formats in format_categories.items():
+            organized_formats[category] = [f for f in formats if f in all_output_formats]
+        
+        return jsonify({
+            'input_formats': sorted(input_formats),
+            'output_formats': sorted(list(all_output_formats)),
+            'organized_output_formats': organized_formats,
+            'message': f'Found {len(input_formats)} input formats and {len(all_output_formats)} output formats'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting all formats: {str(e)}")
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
