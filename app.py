@@ -469,7 +469,7 @@ def convert_pptx_to_markdown(pptx_path: str, output_path: str) -> Tuple[bool, Op
         return False, f"PPTX conversion error: {str(e)}"
 
 def preprocess_special_formats(input_path, input_format, temp_dir):
-    """Preprocess special formats (PDF) to convert them to Pandoc-supported formats. PPTX and others are handled directly by Pandoc."""
+    """Preprocess special formats (PDF, PPTX) to convert them to Pandoc-supported formats. PPTX and others are handled directly by Pandoc."""
     try:
         if input_format == 'pdf':
             # Convert PDF to Markdown first
@@ -479,6 +479,14 @@ def preprocess_special_formats(input_path, input_format, temp_dir):
                 return temp_md_path, 'markdown'
             else:
                 return None, error or "PDF to Markdown conversion failed"
+        elif input_format == 'pptx':
+            # Convert PPTX to Markdown first
+            temp_md_path = os.path.join(temp_dir, 'temp_converted.md')
+            success, error = convert_pptx_to_markdown(input_path, temp_md_path)
+            if success and os.path.exists(temp_md_path):
+                return temp_md_path, 'markdown'
+            else:
+                return None, error or "PPTX to Markdown conversion failed"
         else:
             # No preprocessing needed for other formats (including PPTX)
             return input_path, input_format
